@@ -2,7 +2,7 @@
 
 This is a simple C implementation of the Chinese Restaurant Process. Its overall purpose is clarity and a certain amount of scalability. For example it should handle a million customers, with little problems. In its first commit, it's a single file, 'crp.c'.
 
-To find out more about this sotchastic process, here is hte obligatory wikipedia link: [finite mixture model](http://en.wikipedia.org/wiki/Chinese_restaurant_process).
+To find out more about this stochastic process, here is the obligatory wikipedia link: [Chinese Restaurant Process](http://en.wikipedia.org/wiki/Chinese_restaurant_process).
 
 It has no dependencies except the GNU C library and its general purpose was to fully understand this stochastic process, rather than any flamboyant use of c.
 
