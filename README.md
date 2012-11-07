@@ -15,5 +15,7 @@ It has no dependencies except the GNU C library and its general purpose was to f
 
 ### Algorithm Issues
 * Limit the total number of tables, which will mean shutting down the ability to add new tables, so that the Process then starts to look like a Pólya urn process.
+* In fact this should be generalised, by allowing any table to be shut down after a certain number of customers has been reached.
 * Have customers arrive not only in 1's but in numbers over 1.
+* Have customers arrive in terms of poisson process.
 
