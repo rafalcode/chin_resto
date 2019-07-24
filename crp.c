@@ -1,6 +1,14 @@
 /* Code for simulating the Chinese Restaurant Process
  * Only used on linux, and gcc compiler
  * Compile with gcc -Wall -g crp.c -o crp */
+
+/* comments on the notional table: this is my terminology
+ * for when the incoming customer decides not to sit with the others
+ * but want a new table for himself.
+ * Because this possibility has an associated probability
+ * the same as all the other tables, the easiest way t deal with it
+ * is a table like the rest, but with a special meaning, rahter like
+ * a "standby new table" at the ready when the customer decides this way. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,9 +24,9 @@ typedef struct /* tabarr, a struct to hold an array of tables in sorted order, t
 
 typedef struct /* tarr, this is the operational table struct with a probabilities array, for internal purposes. The main() function doesn't see it */
 {
-    size_t *arr;
+    size_t *arr; /* number of customers at each table */
     float *p;
-    size_t nels;
+    size_t nels; /* number of tables, actually */
     size_t sumels;
     size_t buf;
 } tarr;
@@ -48,6 +56,24 @@ void inita(tarr **ta, size_t statetables[], size_t nels, float alph) /* must be 
     *ta=tta;
 }
 
+void inita2(tarr **ta, float alph) /* must be called with 3rd arg = zero for no tblaes occupied */
+{
+    int i;
+    tarr *tta=*ta;
+    tta=malloc(sizeof(tarr));
+    tta->nels = 1; /* at this point nels now includes table 0 as our notional, always empty table */
+    tta->buf=BUFINC;
+
+    tta->arr=malloc(tta->buf*sizeof(size_t));
+    tta->p=malloc(tta->buf*sizeof(float));
+    tta->arr[0]=0; /* the notional empty table: it's always zero: so arr holds number of customers? */
+    tta->sumels=0;
+    tta->p[0] = alph/(alph+tta->sumels); // we know sumels will be always zero in this function, but anyhow ...
+
+
+    *ta=tta;
+}
+
 void freeta(tarr **ta)
 {
     tarr *tta=*ta;
@@ -60,6 +86,7 @@ void freeta(tarr **ta)
 
 void upta(tarr **ta, size_t nels, float alph)
 {
+    /* increase (usually) our table container for nels tables */
     int i;
     tarr *tta=*ta;
     if(nels > tta->nels) {
@@ -92,6 +119,7 @@ void throwdice(tarr *ta, float *cp[], size_t *cpsz, size_t *winner)
     tcp[0]=.0;
     for(i=1;i<ta->nels+1;++i) 
         tcp[i]=ta->p[i-1]+tcp[i-1];
+    /* Note above that ta->p[] means that a table has its own probability array */
 
     pn=(float)rand()/RAND_MAX;
 #ifdef DEBUG
@@ -104,14 +132,16 @@ void throwdice(tarr *ta, float *cp[], size_t *cpsz, size_t *winner)
         if(pn<tcp[i])
             break;
     *winner=i-1;
+    /* winner=0 actually is that the new entrant has not chosen any of the tables
+     * with customers at it, but prefers a new table where they can sit alone. */
 
     *cp=tcp;
 }
 
-void insort(tabarr *tbarr)
+void insort(tabarr *tbarr) /* looks like an insertion sort */
 {
     int i, j; /* don't make i unsigned, please */
-    size_t heldv /* held value */, shadheld;
+    size_t heldv /* held value */, shadheld /* shadow held? */;
 
     for(j=1;j<tbarr->nels;++j) {
 
@@ -137,10 +167,11 @@ void insort(tabarr *tbarr)
 void runrest(size_t nc, size_t statearr[], size_t nels, float alph, tabarr **tbarr)
 {
     size_t j, w, cpsz=0, *custs=malloc(nc*sizeof(size_t));
-    float *cp=malloc(cpsz*sizeof(float));
+    float *cp=malloc(cpsz*sizeof(float)); /* cumulative probability line, so to speak */
 
-    tarr *ta;
-    inita(&ta, statearr, nels, alph);
+    tarr *ta=NULL;
+    // inita(&ta, statearr, nels, alph); // only called once, excessive things being done here.
+    inita2(&ta, alph); // the simplified version of this function seems to work fine.
 #ifdef DEBUG
     printf("Chinese Restaurant Scheme: Table Idx 0 is notional, it causes a new table to be\ncreated and that table to have a single customer.\n"); 
     printf("The first iteration is trivial, as Table Idx 0 must be chosen, it's the only one.\n"); 
@@ -199,12 +230,12 @@ int main(int argc, char *argv[])
     }
     srand(atoi(argv[1]));
     float alph=atof(argv[2]);
-    size_t i, nc=atoi(argv[3]);
+    size_t i, nc=atoi(argv[3]) /* number of customers */;
 
-    tabarr *tbarr;
-    runrest(nc, NULL, 0, alph, &tbarr);
+    tabarr *tbarr=NULL;
+    runrest(nc, NULL, 0, alph, &tbarr); // this will be run nc number of times one suspects
 
-    printf("Top tables (%zu in total): ", tbarr->nels); /* Table Idx is not a real table */
+    printf("Top tables (%zu in total): ", tbarr->nels); /* Table Idx "0" is not a real table */
     for(i=0;i<tbarr->nels;++i)
         printf("T%zu:%zu|", tbarr->movsa[i]+1, tbarr->els[i]);  /* note table 1 is indexed zero */
     printf("\n"); 
