@@ -9,6 +9,8 @@
  * the same as all the other tables, the easiest way t deal with it
  * is a table like the rest, but with a special meaning, rahter like
  * a "standby new table" at the ready when the customer decides this way. */
+
+/* crp0.c is mostly the original code that I cam up ages ago, in Vigo I believe */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
