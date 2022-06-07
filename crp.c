@@ -1,6 +1,9 @@
+/* crp.c after second revisit of June 2022, I copoed the original crp to crp0
+ * and started working on a cleaner version */
+
 /* Code for simulating the Chinese Restaurant Process
  * Only used on linux, and gcc compiler
- * Compile with gcc -Wall -g crp.c -o crp */
+ * Compile with "make crp" */
 
 /* comments on the notional table: this is my terminology
  * for when the incoming customer decides not to sit with the others
@@ -15,78 +18,49 @@
 
 #define BUFINC 4
 
-typedef struct /* tabarr, a struct to hold an array of tables in sorted order, together with an array of indices of the element's previous positions for external, labelling purposes */
+typedef struct /* tabarr_t, this is the operational table struct with a probabilities array, for internal purposes. The main() function doesn't see it */
 {
-    size_t *els; /* elements in ranked form */
-    size_t *movsa; /* the movs array, shows what's gone where */
-    size_t nta; // number of tables.
-} tabarr;
-
-typedef struct /* tarr, this is the operational table struct with a probabilities array, for internal purposes. The main() function doesn't see it */
-{
-    size_t *arr; /* number of customers at each table */
+    unsigned *arr; /* number of customers at each table */
     float *p;
-    size_t nta; /* number of tables, actually */
-    size_t sumels;
-    size_t buf;
-} tarr;
+    unsigned nta; /* number of tables, actually */
+    unsigned totcusts;
+    unsigned buf;
+} tabarr_t;
 
-void inita(tarr **ta, size_t statetables[], size_t nta, float thet) /* must be called with 3rd arg = zero for no tblaes occupied */
+void inita(tabarr_t **ta, float thet, float alph) /* must be called with 3rd arg = zero for no tblaes occupied */
 {
-    int i;
-    tarr *tta=*ta;
-    tta=malloc(sizeof(tarr));
-    tta->nta = nta+1; /* at this point nta now includes table 0 as our notional, always empty table */
-    for(tta->buf=BUFINC; ;tta->buf +=BUFINC)
-        if(tta->buf > tta->nta)
-            break;
-
-    tta->arr=malloc(tta->buf*sizeof(size_t));
-    tta->p=malloc(tta->buf*sizeof(float));
-    tta->arr[0]=0; /* the notional empty table: it's always zero */
-    if(tta->nta >1) /* at 1, our stabletables[] is NULL, empty */
-        memcpy(tta->arr+1, statetables, (tta->nta-1)*sizeof(size_t));
-
-    tta->sumels=0;
-    for(i=1;i<tta->nta;++i)
-        tta->sumels += tta->arr[i];
-    for(i=0;i<tta->nta;++i)
-        tta->p[i] = (i==0)? thet/(thet+tta->sumels) : (float)tta->arr[i]/(thet+tta->sumels);
-
-    *ta=tta;
-}
-
-void inita2(tarr **ta, float thet) /* must be called with 3rd arg = zero for no tblaes occupied */
-{
-    tarr *tta=*ta;
-    tta=malloc(sizeof(tarr));
-    tta->nta = 1; /* at this point nta now includes table 0 as our notional, always empty table */
+    tabarr_t *tta=*ta;
+    tta=malloc(sizeof(tabarr_t));
     tta->buf=BUFINC;
 
     tta->arr=malloc(tta->buf*sizeof(size_t));
     tta->p=malloc(tta->buf*sizeof(float));
-    tta->arr[0]=0; /* the notional empty table: it's always zero: so arr holds number of customers? */
-    tta->sumels=0;
-    tta->p[0] = thet/(thet+tta->sumels); // we know sumels will be always zero in this function, but you can link this with the equation in wikipedia entry.
+
+    /* Now the first table is not like the other tables, because it represents the notional new table, an in fact the infinite set of tables in mathematical terms. 
+    Note: this will have the odd effect of permitting 1-based indexing in some cases */
+    tta->nta = 1;
+    tta->arr[0]=0;
+    tta->totcusts=0;
+    tta->p[0] = (thet + alph*(tta->nta-1))/(thet+tta->totcusts); // we know totcusts will be always zero in this function, but you can link this with the equation in wikipedia entry.
 
     *ta=tta;
 }
 
-void freeta(tarr **ta)
+void freeta(tabarr_t **ta)
 {
-    tarr *tta=*ta;
+    tabarr_t *tta=*ta;
     free(tta->arr);
     free(tta->p);
     free(tta);
-
     *ta=tta;
 }
 
-void upta(tarr **ta, size_t nta, float thet)
+void upta(tabarr_t **ta, unsigned nta, float thet, float alph) /* update table array */
 {
     /* increase (usually) our table container for nta tables */
     int i;
-    tarr *tta=*ta;
+    tabarr_t *tta=*ta;
+    /* Deal with situ when an extra table has been added */
     if(nta > tta->nta) {
         if(nta == tta->buf-1) {
             tta->buf += BUFINC;
@@ -96,151 +70,100 @@ void upta(tarr **ta, size_t nta, float thet)
         tta->nta=nta;
         tta->arr[tta->nta-1]=1; /* our new table gets its first customer */
     }
-    tta->sumels = 0;
-    for(i=1;i<tta->nta;++i)
-        tta->sumels += tta->arr[i];
+    tta->totcusts++;
+    /* now recalc the probability scores */
     for(i=0;i<tta->nta;++i)
-        tta->p[i] = (i==0)? thet/(thet+tta->sumels) : (float)tta->arr[i]/(thet+tta->sumels);
-
+        tta->p[i] = (i==0)? (thet + alph*(tta->nta-1))/(thet+tta->totcusts) : ((float)(tta->arr[i])-alph)/(thet+tta->totcusts);
     *ta=tta;
 }
 
-void throwdice(tarr *ta, float *cp[], size_t *cpsz, size_t *winner, int j)
+void throwdice(tabarr_t *ta, unsigned *winner, int j) /* cp is the cumulative probscores (p for each table) */
 {
     int i;
-    float pn, *tcp=*cp;
+    float pn, *cp=malloc((ta->nta+1)*sizeof(float)); /* cumulative probability line, so to speak */
 
-    if(*cpsz != ta->nta+1) {
-        *cpsz= ta->nta+1;
-        tcp=realloc(tcp, *cpsz*sizeof(float));
-    }
-    tcp[0]=.0;
+    cp[0]=.0;
     for(i=1;i<ta->nta+1;++i) 
-        tcp[i]=ta->p[i-1]+tcp[i-1];
+        cp[i]=ta->p[i-1]+cp[i-1];
     /* Note above that ta->p[] means that a table has its own probability array */
 
     pn=(float)rand()/RAND_MAX;
 #ifdef DEBUG
     printf("Cumul probs before arrival of Customer no. %i: ", j); 
     for(i=0;i<ta->nta+1;++i) 
-        printf("%f ", tcp[i]); 
+        printf("%f ", cp[i]); 
     printf("/ diceroll=%f ", pn); 
 #endif
     for(i=1;i<ta->nta+1;++i) 
-        if(pn<tcp[i])
+        if(pn<cp[i])
             break;
-    *winner=i-1;
-    /* winner=0 actually is that the new entrant has not chosen any of the tables
-     * with customers at it, but prefers a new table where they can sit alone. */
-
-    *cp=tcp;
+    *winner=i-1; // the table winner, that is.
+    free(cp);
 }
 
-void insort(tabarr *tbarr) /* looks like an insertion sort */
+void runrest(unsigned nc, float thet, float alph, tabarr_t **ta)
 {
-    int i, j; /* don't make i unsigned, please */
-    size_t heldv /* held value */, shadheld /* shadow held? */;
+    unsigned j, winner;
+    unsigned *custs=malloc(nc*sizeof(size_t)); // we rcord to which table each customer is sent to.
 
-    for(j=1;j<tbarr->nta;++j) {
-
-        heldv=tbarr->els[j];
-        shadheld=tbarr->movsa[j];
-        i=j-1;
-        while( (i>=0) && (tbarr->els[i] < heldv) ) { /* push up all elements behind where heldv was by 1, as long as they are bigger than heldv */
-            tbarr->els[i+1] = tbarr->els[i];
-            tbarr->movsa[i+1] = tbarr->movsa[i];
-            i -= 1;
-        }
-        tbarr->els[i+1] =heldv; /* i+1 is now heldv's rightful position, and it is now just behind the last elemtn that was moved up */
-        tbarr->movsa[i+1] =shadheld;
-    }
-#ifdef DEBUG
-    printf("Here is our movsa array: "); 
-    for(j=0;j<tbarr->nta;++j)
-        printf("%zu ", tbarr->movsa[j]);
-    printf("\n"); 
-#endif
-}
-
-void runrest(size_t nc, size_t statearr[], size_t nta, float thet, tabarr **tbarr)
-{
-    size_t j, w, cpsz=0, *custs=malloc(nc*sizeof(size_t));
-    float *cp=malloc(cpsz*sizeof(float)); /* cumulative probability line, so to speak */
-
-    tarr *ta=NULL;
-    // inita(&ta, statearr, nta, thet); // only called once, excessive things being done here.
-    inita2(&ta, thet); // the simplified version of this function seems to work fine.
+    inita(ta, thet, alph); // the simplified version of this function seems to work fine.
 #ifdef DEBUG
     printf("Chinese Restaurant Scheme: Table Idx 0 is notional, it causes a new table to be\ncreated and that table to have a single customer.\n"); 
     printf("The first iteration is trivial, as Table Idx 0 must be chosen, it's the only one.\n"); 
     printf("----------------------------\n"); 
 #endif
-    throwdice(ta, &cp, &cpsz, &w, 1); // first one is trivial, but do it anyway.
+    throwdice(*ta, &winner, 1); // first one is trivial, but do it anyway.
 #ifdef DEBUG
-    (w!=0)? printf(" / Result: %zu\n", w) : printf(" / w=0, so,new table, num: %zu\n", ta->nta); /* redundant check, yes, for clarity */
+    (winner!=0)? printf(" / Result: %u\n", winner) : printf(" / winner=0, so a new (proper) table is created: T%02u\n", (*ta)->nta); /* redundant check, yes, for clarity */
 #endif
-    if(w != 0) {
-        ta->arr[w]++;
-        upta(&ta, ta->nta, thet);
+    if(winner != 0) {
+        (*ta)->arr[winner]++;
+        upta(ta, (*ta)->nta, thet, alph);
     } else
-        upta(&ta, ta->nta+1, thet);
+        upta(ta, (*ta)->nta+1, thet, alph);
 
-    custs[0]=w+1; /* OK, that's the trivial first customer dealt with */
+    custs[0]=winner+1; /* this will be table 1, the first customer always goes to table 1 */
 
-    for(j=1;j<nc;++j) { /* now we consider the other customers */
+    /* OK, now we're going to loop through each customer as they arrive in sequential fashio, so it's one customer at a time. */
+    for(j=1;j<nc;++j) {
 
-        throwdice(ta, &cp, &cpsz, &w, j+1);
+        throwdice(*ta, &winner, j+1);
 #ifdef DEBUG
-        (w!=0)? printf(" / Result: %zu\n", w) : printf(" / w=0, so,new table, num: %zu\n", ta->nta);
+        (winner!=0)? printf(" / Result: %u\n", winner) : printf(" / winner=0, so,new table, num: %u\n", (*ta)->nta);
 #endif
-        custs[j] = (w==0)? ta->nta : w;
+        custs[j] = (winner==0)? (*ta)->nta : winner; // i.e. if notional table0 wins, custoemr will go to final table, which is a new one.
 
-        if(w != 0) {
-            ta->arr[w]++;
-            upta(&ta, ta->nta, thet);
+        if(winner != 0) { // a current table was chosen, increase its size by 1.
+            (*ta)->arr[winner]++;
+            upta(ta, (*ta)->nta, thet, alph); // this will mostly be about recalculating probscores.
         } else
-            upta(&ta, ta->nta+1, thet);
+            upta(ta, (*ta)->nta+1, thet, alph); // a new tble is need, upta will update accordingly.
 
     }
-
-    tabarr *ttbarr=malloc(sizeof(tabarr));
-    ttbarr->nta=ta->nta-1;
-    ttbarr->els=malloc(ttbarr->nta*sizeof(size_t));
-    memcpy(ttbarr->els, ta->arr+1, ttbarr->nta*sizeof(size_t));
-    ttbarr->movsa=malloc(ttbarr->nta*sizeof(size_t));
-    int i;
-    for(i=0;i<ttbarr->nta;++i) 
-        ttbarr->movsa[i] = i;
-
-    insort(ttbarr);
-
-    *tbarr=ttbarr;
-    freeta(&ta);
-    free(cp);
     free(custs);
 }
 
 int main(int argc, char *argv[])
 {
-    if(argc!=4) {
-        printf("Error. Pls supply 3 arguments: 1) integer for seed 2) theta float 3) and number of customers.\n");
-        printf("       theta float should be =1 for default run.\n");
+    if(argc!=5) {
+        printf("Error. Pls supply 4 arguments: 1) integer for seed 2) theta float 3) alpha float 4) and number of customers.\n");
+        printf("       theta (discount param) float should be =1 for default run.\n");
+        printf("       alpha (strength/concentration param) float should be =0 for default run.\n");
         exit(EXIT_FAILURE);
     }
     srand(atoi(argv[1]));
     float thet=atof(argv[2]);
-    size_t i, nc=atoi(argv[3]) /* number of customers */;
+    float alph=atof(argv[3]);
+    unsigned i, nc=atoi(argv[4]) /* number of customers */;
 
-    tabarr *tbarr=NULL;
-    runrest(nc, NULL, 0, thet, &tbarr); // this will be run nc number of times one suspects
+    tabarr_t *ta=NULL;
+    runrest(nc, thet, alph, &ta); // this will be run nc number of times one suspects
 
-    printf("Top tables (%zu in total): ", tbarr->nta); /* Table Idx "0" is not a real table */
-    for(i=0;i<tbarr->nta;++i)
-        printf("T%zu:%zu|", tbarr->movsa[i]+1, tbarr->els[i]);  /* note table 1 is indexed zero */
+    printf("Table listings (%u in total): ", ta->nta); /* Table Idx "0" is not a real table */
+    for(i=0;i<ta->nta;++i)
+        printf("T%02u:%u|", i+1, ta->arr[i]);
     printf("\n"); 
 
-    free(tbarr->els);
-    free(tbarr->movsa);
-    free(tbarr);
+    freeta(&ta);
     return 0;
 }
