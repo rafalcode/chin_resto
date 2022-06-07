@@ -45,3 +45,22 @@ This is the so called discount parameter, and it basically bolsters the empty ta
 # Indian Buffet process.
 This time we are not talking tables, but dishes, and customer do not exclusively pick one, but a combination of dishes whihc are marked witht he number of times they've been tried and also an infinite number of new dishes.
 
+
+# Relation to stick breaking process
+
+This should be smooth, but it isn't. if we take the wellknown Edwin Chen blostpost http://blog.echen.me/2012/03/20/infinite-mixture-models-with-nonparametric-bayes-and-the-dirichlet-process/
+and the Michael I Jordan lectures. In any case the code is:
+
+play around witht he alphas, 2,5 10 the hihgher they go the shorter the breaks will be and you could end up with very many little pieces.
+
+stick_breaking_process = function(num_weights, alpha) {
+    betas = rbeta(num_weights, 1, alpha)
+# 1-betas introduces the breaking off stick effect.
+    remaining_stick_lengths = c(1, cumprod(1 - betas))[1:num_weights]
+# note how the final beta draw is not used, it's cut off ... I suppose it's just a stopping criterion.
+    weights = remaining_stick_lengths * betas
+# so these are the true weights, becuase the early breaks, especially the first one will likely be the biggest, or the winning piece
+# actually in CRP the first table is also at an adntage, But the differnece is that, as more tables appear, it's influence decreases
+# while in the stick breaking, the first piece never change its importance.
+  }
+  

@@ -159,9 +159,9 @@ int main(int argc, char *argv[])
     tabarr_t *ta=NULL;
     runrest(nc, thet, alph, &ta); // this will be run nc number of times one suspects
 
-    printf("Table listings (%u in total): ", ta->nta); /* Table Idx "0" is not a real table */
-    for(i=0;i<ta->nta;++i)
-        printf("T%02u:%u|", i+1, ta->arr[i]);
+    printf("Table listings (%u in total): ", ta->nta-1); /* Table Idx "0" is not a real table, so take it out. */
+    for(i=1;i<ta->nta;++i)
+        printf("T%02u:%u|", i, ta->arr[i]);
     printf("\n"); 
 
     freeta(&ta);
